@@ -25,7 +25,7 @@ import {
   EXTRA_TEST_CASES,
   type ContractTestCase,
   type ExtraTestCase,
-} from '@/lib/rules.test';
+} from '@/lib/testCases';
 import {
   buildFallback,
   explainAvailability,
