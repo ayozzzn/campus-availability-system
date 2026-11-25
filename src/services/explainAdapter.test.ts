@@ -8,8 +8,8 @@ import {
 
 const baseInput = {
   roomLabel: 'Room A-101',
-  startTime: '10:00',
-  endTime: '11:00',
+  startTime: '2026-11-26T08:00',
+  endTime: '2026-11-26T09:00',
   isAvailable: true,
   reasonCode: 'AVAILABLE' as const,
 };
@@ -45,7 +45,7 @@ describe('input validation', () => {
 
 describe('output validation', () => {
   it('accepts a plain sentence within limits', () => {
-    expect(isValidExplanation('Room A-101 is free from 10:00 to 11:00. All rules passed.', true)).toBe(true);
+    expect(isValidExplanation('Room A-101 is free from 08:00 to 09:00. All rules passed.', true)).toBe(true);
   });
 
   it('rejects empty text', () => {
@@ -120,7 +120,14 @@ describe('mock adapter', () => {
 
 describe('fallback text', () => {
   it('is non-empty, within length, and at most 2 sentences for every reason code', () => {
-    for (const code of ['AVAILABLE', 'OVERLAP', 'ROOM_BLOCKED', 'INVALID_TIME', 'PAST_TIME'] as const) {
+    for (const code of [
+      'AVAILABLE',
+      'INVALID_INPUT',
+      'INVALID_START_PAST',
+      'INVALID_DURATION',
+      'ROOM_BLOCKED',
+      'OVERLAP',
+    ] as const) {
       const text = buildFallback(code);
       expect(text.trim().length).toBeGreaterThan(0);
       expect(text.length).toBeLessThanOrEqual(240);

@@ -1,9 +1,6 @@
-export type ReasonCode =
-  | 'AVAILABLE'
-  | 'OVERLAP'
-  | 'ROOM_BLOCKED'
-  | 'INVALID_TIME'
-  | 'PAST_TIME';
+import type { ReasonCode } from '@/lib/rules';
+
+export type { ReasonCode };
 
 export type ExplainInput = {
   roomLabel: string;
@@ -26,10 +23,11 @@ export const TIMEOUT_MS = 3000;
 
 const REASON_CODES: ReasonCode[] = [
   'AVAILABLE',
-  'OVERLAP',
+  'INVALID_INPUT',
+  'INVALID_START_PAST',
+  'INVALID_DURATION',
   'ROOM_BLOCKED',
-  'INVALID_TIME',
-  'PAST_TIME',
+  'OVERLAP',
 ];
 
 export function isReasonCode(value: unknown): value is ReasonCode {
@@ -67,10 +65,11 @@ export function isValidExplanation(
 
 export const FALLBACK_TEXT: Record<ReasonCode, string> = {
   AVAILABLE: 'The room is free for this window under the booking rules.',
-  OVERLAP: 'The window overlaps an existing booking, so it is not available.',
+  INVALID_INPUT: 'The input was invalid, so availability could not be determined.',
+  INVALID_START_PAST: 'The start time is not in the future, so this window is not available.',
+  INVALID_DURATION: 'The duration is outside the allowed range, so this window is not available.',
   ROOM_BLOCKED: 'The room is blocked, so this window is not available.',
-  INVALID_TIME: 'The requested time is outside the allowed range or malformed, so this window is not available.',
-  PAST_TIME: 'The window starts at or before the current time, so it is not available.',
+  OVERLAP: 'The window overlaps an existing booking, so it is not available.',
 };
 
 export function buildFallback(reasonCode: ReasonCode): string {
@@ -80,14 +79,16 @@ export function buildFallback(reasonCode: ReasonCode): string {
 const TEMPLATES: Record<ReasonCode, (i: ExplainInput) => string> = {
   AVAILABLE: (i) =>
     `${i.roomLabel} is free from ${i.startTime} to ${i.endTime}. All booking rules passed.`,
-  OVERLAP: (i) =>
-    `${i.roomLabel} already has a booking overlapping ${i.startTime}–${i.endTime}. Pick a different window.`,
+  INVALID_INPUT: (i) =>
+    `The request for ${i.roomLabel} had invalid input. Correct the start time and duration and try again.`,
+  INVALID_START_PAST: (i) =>
+    `The window starting at ${i.startTime} is at or before the current time. Choose a future slot.`,
+  INVALID_DURATION: (i) =>
+    `The duration for ${i.roomLabel} must be between 1 and 120 minutes. Adjust and try again.`,
   ROOM_BLOCKED: (i) =>
     `${i.roomLabel} is currently blocked. This window cannot be booked.`,
-  INVALID_TIME: (i) =>
-    `The window ${i.startTime}–${i.endTime} is outside the allowed range or malformed. Adjust the times and check again.`,
-  PAST_TIME: (i) =>
-    `The window starting at ${i.startTime} is at or before the current time. Choose a future slot.`,
+  OVERLAP: (i) =>
+    `${i.roomLabel} already has a booking overlapping ${i.startTime}–${i.endTime}. Pick a different window.`,
 };
 
 function sleep(ms: number): Promise<void> {

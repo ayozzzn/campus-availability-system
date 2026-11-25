@@ -28,11 +28,12 @@ export type ComparisonScenario = {
 };
 
 export const SCENARIOS: ComparisonScenario[] = [
-  { reasonCode: 'AVAILABLE', roomLabel: 'Room A-101', startTime: '10:00', endTime: '11:00', isAvailable: true },
-  { reasonCode: 'OVERLAP', roomLabel: 'Room A-101', startTime: '10:30', endTime: '11:30', isAvailable: false },
-  { reasonCode: 'ROOM_BLOCKED', roomLabel: 'Room B-202', startTime: '09:00', endTime: '10:00', isAvailable: false },
-  { reasonCode: 'INVALID_TIME', roomLabel: 'Room C-303', startTime: '25:00', endTime: '26:00', isAvailable: false },
-  { reasonCode: 'PAST_TIME', roomLabel: 'Room D-404', startTime: '08:00', endTime: '09:00', isAvailable: false },
+  { reasonCode: 'AVAILABLE', roomLabel: 'Room A-101', startTime: '2026-11-26T08:00', endTime: '2026-11-26T09:00', isAvailable: true },
+  { reasonCode: 'OVERLAP', roomLabel: 'Room A-101', startTime: '2026-11-26T10:30', endTime: '2026-11-26T11:30', isAvailable: false },
+  { reasonCode: 'ROOM_BLOCKED', roomLabel: 'Room A-101', startTime: '2026-11-26T08:00', endTime: '2026-11-26T09:00', isAvailable: false },
+  { reasonCode: 'INVALID_INPUT', roomLabel: 'Room A-101', startTime: 'invalid', endTime: 'invalid', isAvailable: false },
+  { reasonCode: 'INVALID_START_PAST', roomLabel: 'Room A-101', startTime: '2026-11-25T09:00', endTime: '2026-11-25T10:00', isAvailable: false },
+  { reasonCode: 'INVALID_DURATION', roomLabel: 'Room A-101', startTime: '2026-11-26T08:00', endTime: '2026-11-26T10:01', isAvailable: false },
 ];
 
 /**
@@ -42,7 +43,6 @@ export const SCENARIOS: ComparisonScenario[] = [
  */
 export function simulateMockLlm(promptId: SystemPrompt['id'], s: ComparisonScenario): string {
   if (promptId === 'P1') {
-    // Vague prompt: no constraints, so the mock sometimes contradicts the facts.
     switch (s.reasonCode) {
       case 'AVAILABLE':
         return 'The room is available.';
@@ -50,10 +50,12 @@ export function simulateMockLlm(promptId: SystemPrompt['id'], s: ComparisonScena
         return 'The room should be available at that time.';
       case 'ROOM_BLOCKED':
         return 'The room is not available.';
-      case 'INVALID_TIME':
+      case 'INVALID_INPUT':
         return 'The room is available for your request.';
-      case 'PAST_TIME':
+      case 'INVALID_START_PAST':
         return 'The room is not available.';
+      case 'INVALID_DURATION':
+        return 'The room is available for your request.';
     }
   }
   if (promptId === 'P2') {
@@ -64,10 +66,12 @@ export function simulateMockLlm(promptId: SystemPrompt['id'], s: ComparisonScena
         return `Unfortunately, ${s.roomLabel} is not available from ${s.startTime} to ${s.endTime} due to an existing booking. Please try another time.`;
       case 'ROOM_BLOCKED':
         return `Unfortunately, ${s.roomLabel} is not available because it is currently blocked. Please check back later.`;
-      case 'INVALID_TIME':
-        return `Unfortunately, ${s.roomLabel} is not available for this request because the time is invalid. Please adjust the times.`;
-      case 'PAST_TIME':
+      case 'INVALID_INPUT':
+        return `Unfortunately, ${s.roomLabel} is not available for this request because the input is invalid. Please correct the times.`;
+      case 'INVALID_START_PAST':
         return `Unfortunately, ${s.roomLabel} is not available because the time is in the past. Please pick a future slot.`;
+      case 'INVALID_DURATION':
+        return `Unfortunately, ${s.roomLabel} is not available because the duration is outside the allowed range. Please adjust.`;
     }
   }
   // P3: strict JSON-only reply.
@@ -78,10 +82,12 @@ export function simulateMockLlm(promptId: SystemPrompt['id'], s: ComparisonScena
       return JSON.stringify({ explanation: `${s.roomLabel} is not available from ${s.startTime} to ${s.endTime}.` });
     case 'ROOM_BLOCKED':
       return JSON.stringify({ explanation: `${s.roomLabel} is not available.` });
-    case 'INVALID_TIME':
+    case 'INVALID_INPUT':
       return JSON.stringify({ explanation: `${s.roomLabel} is not available for this request.` });
-    case 'PAST_TIME':
+    case 'INVALID_START_PAST':
       return JSON.stringify({ explanation: `${s.roomLabel} is not available because the requested time has passed.` });
+    case 'INVALID_DURATION':
+      return JSON.stringify({ explanation: `${s.roomLabel} is not available because the duration is invalid.` });
   }
 }
 
@@ -99,7 +105,6 @@ export function runComparison(): ComparisonRow[] {
   for (const p of SYSTEM_PROMPTS) {
     for (const s of SCENARIOS) {
       const raw = simulateMockLlm(p.id, s);
-      // P3 replies with JSON; extract the explanation field like a real client would.
       const explanation =
         p.id === 'P3' ? (JSON.parse(raw) as { explanation: string }).explanation : raw;
       const agrees = isValidExplanation(explanation, s.isAvailable);
