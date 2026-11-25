@@ -11,6 +11,7 @@ import {
   Lock,
   Ban,
   FlaskConical,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   checkAvailability,
@@ -19,7 +20,12 @@ import {
   ROOM_LABEL,
   type AvailabilityResult,
 } from '@/lib/rules';
-import { TEST_CASES, type TestCase } from '@/lib/rules.test';
+import {
+  CONTRACT_TEST_CASES,
+  EXTRA_TEST_CASES,
+  type ContractTestCase,
+  type ExtraTestCase,
+} from '@/lib/rules.test';
 import {
   buildFallback,
   explainAvailability,
@@ -48,13 +54,17 @@ function computeEnd(start: string, durationMinutes: number): string {
   return new Date(ts + durationMinutes * 60 * 1000).toISOString().slice(0, 16);
 }
 
+type ContractRow = { tc: ContractTestCase; pass: boolean; detail: string };
+type ExtraRow = { tc: ExtraTestCase; observed: AvailabilityResult; pass: boolean };
+
 export default function App() {
-  const [start, setStart] = useState<string>('2026-11-26T08:00');
+  const [start, setStart] = useState<string>('2026-11-26T12:00');
   const [duration, setDuration] = useState<string>('60');
   const [blocked, setBlocked] = useState<boolean>(false);
 
   const [result, setResult] = useState<AvailabilityResult | null>(null);
-  const [testResults, setTestResults] = useState<{ tc: TestCase; observed: AvailabilityResult; pass: boolean }[] | null>(null);
+  const [contractRows, setContractRows] = useState<ContractRow[] | null>(null);
+  const [extraRows, setExtraRows] = useState<ExtraRow[] | null>(null);
 
   const [explanation, setExplanation] = useState<ExplainResult | null>(null);
   const [explaining, setExplaining] = useState(false);
@@ -102,13 +112,46 @@ export default function App() {
   };
 
   const handleRunTests = () => {
-    const rows = TEST_CASES.map((tc) => {
+    // Snapshot bookings before running any test
+    const snapshot = FIXED_BOOKINGS.map((b) => ({ ...b }));
+
+    // Run T1–T7 (availability cases)
+    const rows: ContractRow[] = [];
+    for (const tc of CONTRACT_TEST_CASES) {
+      if (tc.kind === 'availability') {
+        const observed = checkAvailability(tc.input);
+        const pass =
+          observed.available === tc.expectedAvailable &&
+          observed.reasonCode === tc.expectedReason;
+        rows.push({
+          tc,
+          pass,
+          detail: `${observed.available ? 'Available' : 'Unavailable'} / ${observed.reasonCode}`,
+        });
+      }
+    }
+
+    // T8: verify bookings array deep-equals original snapshot
+    const afterSnapshot = FIXED_BOOKINGS.map((b) => ({ ...b }));
+    const t8Pass = JSON.stringify(afterSnapshot) === JSON.stringify(snapshot);
+    const t8 = CONTRACT_TEST_CASES.find((t) => t.id === 'T8')!;
+    rows.push({
+      tc: t8,
+      pass: t8Pass,
+      detail: t8Pass ? 'B1, B2, B3 unchanged' : 'Bookings were mutated!',
+    });
+
+    setContractRows(rows);
+
+    // Run additional tests
+    const extras: ExtraRow[] = EXTRA_TEST_CASES.map((tc) => {
       const observed = checkAvailability(tc.input);
       const pass =
-        observed.available === tc.expectedAvailable && observed.reasonCode === tc.expectedReason;
+        observed.available === tc.expectedAvailable &&
+        observed.reasonCode === tc.expectedReason;
       return { tc, observed, pass };
     });
-    setTestResults(rows);
+    setExtraRows(extras);
   };
 
   const tone =
@@ -118,8 +161,10 @@ export default function App() {
       ? 'border-rose-200 bg-rose-50 text-rose-800'
       : 'border-slate-200 bg-slate-50 text-slate-500';
 
-  const passedCount = testResults?.filter((r) => r.pass).length ?? 0;
-  const totalCount = testResults?.length ?? 0;
+  const contractPassed = contractRows?.filter((r) => r.pass).length ?? 0;
+  const contractTotal = contractRows?.length ?? 0;
+  const extraPassed = extraRows?.filter((r) => r.pass).length ?? 0;
+  const extraTotal = extraRows?.length ?? 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-50 via-slate-50 to-slate-100 text-slate-800">
@@ -162,7 +207,7 @@ export default function App() {
         </header>
 
         <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
-          {/* Left column: form + existing bookings */}
+          {/* Left column: form + existing bookings + demo now */}
           <div className="space-y-6">
             <section className="rounded-2xl border border-sky-100 bg-white/90 p-5 shadow-lg shadow-sky-100/40 backdrop-blur-sm sm:p-6">
               <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-sky-900">
@@ -231,9 +276,25 @@ export default function App() {
                   </li>
                 ))}
               </ul>
-              <div className="mt-3 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                <Clock className="h-3.5 w-3.5 shrink-0 text-sky-400" />
-                Reference "now" for tests: {formatDateTime(FIXED_NOW)}
+            </section>
+
+            {/* Demo "now" — prominent */}
+            <section className="rounded-2xl border-2 border-sky-200 bg-sky-50/80 p-5 shadow-lg shadow-sky-100/40 sm:p-6">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600">
+                  <Clock className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-sky-500">
+                    Demo "now" (reference time)
+                  </p>
+                  <p className="mt-0.5 text-lg font-bold text-sky-900">
+                    {formatDateTime(FIXED_NOW)}
+                  </p>
+                  <p className="mt-0.5 text-xs text-sky-600/70">
+                    All availability checks compare the start time against this fixed reference.
+                  </p>
+                </div>
               </div>
             </section>
           </div>
@@ -308,12 +369,12 @@ export default function App() {
               </section>
             )}
 
-            {/* Tests section */}
+            {/* Contract tests T1–T8 */}
             <section className="rounded-2xl border border-sky-100 bg-white/90 p-5 shadow-lg shadow-sky-100/40 backdrop-blur-sm sm:p-6">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="flex items-center gap-2 text-sm font-semibold text-sky-900">
                   <FlaskConical className="h-4 w-4 text-sky-500" />
-                  Test cases (T1–T8)
+                  Contract tests (T1–T8)
                 </h2>
                 <button
                   onClick={handleRunTests}
@@ -324,22 +385,22 @@ export default function App() {
                 </button>
               </div>
 
-              {testResults ? (
+              {contractRows ? (
                 <>
                   <div className="mb-3 flex items-center gap-2 text-xs font-medium">
                     <span
                       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 ${
-                        passedCount === totalCount
+                        contractPassed === contractTotal
                           ? 'bg-emerald-50 text-emerald-700'
                           : 'bg-amber-50 text-amber-700'
                       }`}
                     >
-                      {passedCount === totalCount ? (
+                      {contractPassed === contractTotal ? (
                         <CheckCircle2 className="h-3.5 w-3.5" />
                       ) : (
                         <Ban className="h-3.5 w-3.5" />
                       )}
-                      {passedCount} / {totalCount} passed
+                      {contractPassed} / {contractTotal} passed
                     </span>
                   </div>
                   <div className="overflow-x-auto">
@@ -354,34 +415,32 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {testResults.map(({ tc, observed, pass }) => (
+                        {contractRows.map(({ tc, pass, detail }) => (
                           <tr key={tc.id} className="border-b border-slate-100 last:border-0">
                             <td className="py-2 pr-2 font-mono font-medium text-sky-700">{tc.id}</td>
                             <td className="py-2 pr-2 text-slate-600">{tc.label}</td>
-                            <td className="py-2 pr-2">
-                              <span
-                                className={`font-medium ${
-                                  tc.expectedAvailable ? 'text-emerald-600' : 'text-rose-600'
-                                }`}
-                              >
-                                {tc.expectedAvailable ? 'Available' : 'Unavailable'}
-                              </span>
-                              <span className="block font-mono text-[10px] text-slate-400">
-                                {tc.expectedReason}
-                              </span>
+                            <td className="py-2 pr-2 text-slate-500">
+                              {tc.kind === 'availability' ? (
+                                <>
+                                  <span
+                                    className={`font-medium ${
+                                      tc.expectedAvailable ? 'text-emerald-600' : 'text-rose-600'
+                                    }`}
+                                  >
+                                    {tc.expectedAvailable ? 'Available' : 'Unavailable'}
+                                  </span>
+                                  <span className="block font-mono text-[10px] text-slate-400">
+                                    {tc.expectedReason}
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="flex items-center gap-1 text-slate-500">
+                                  <ShieldCheck className="h-3 w-3" />
+                                  Bookings unchanged
+                                </span>
+                              )}
                             </td>
-                            <td className="py-2 pr-2">
-                              <span
-                                className={`font-medium ${
-                                  observed.available ? 'text-emerald-600' : 'text-rose-600'
-                                }`}
-                              >
-                                {observed.available ? 'Available' : 'Unavailable'}
-                              </span>
-                              <span className="block font-mono text-[10px] text-slate-400">
-                                {observed.reasonCode}
-                              </span>
-                            </td>
+                            <td className="py-2 pr-2 text-slate-500">{detail}</td>
                             <td className="py-2">
                               {pass ? (
                                 <CheckCircle2 className="h-4 w-4 text-emerald-500" />
@@ -401,6 +460,79 @@ export default function App() {
                 </p>
               )}
             </section>
+
+            {/* Additional tests */}
+            {extraRows && (
+              <section className="rounded-2xl border border-slate-100 bg-white/90 p-5 shadow-lg shadow-sky-100/30 backdrop-blur-sm sm:p-6">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    <FlaskConical className="h-4 w-4 text-slate-400" />
+                    Additional tests
+                  </h2>
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                      extraPassed === extraTotal
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-amber-50 text-amber-700'
+                    }`}
+                  >
+                    {extraPassed} / {extraTotal} passed
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-400">
+                        <th className="py-2 pr-2 font-medium">ID</th>
+                        <th className="py-2 pr-2 font-medium">Scenario</th>
+                        <th className="py-2 pr-2 font-medium">Expected</th>
+                        <th className="py-2 pr-2 font-medium">Observed</th>
+                        <th className="py-2 font-medium">Result</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {extraRows.map(({ tc, observed, pass }) => (
+                        <tr key={tc.id} className="border-b border-slate-100 last:border-0">
+                          <td className="py-2 pr-2 font-mono font-medium text-slate-500">{tc.id}</td>
+                          <td className="py-2 pr-2 text-slate-600">{tc.label}</td>
+                          <td className="py-2 pr-2">
+                            <span
+                              className={`font-medium ${
+                                tc.expectedAvailable ? 'text-emerald-600' : 'text-rose-600'
+                              }`}
+                            >
+                              {tc.expectedAvailable ? 'Available' : 'Unavailable'}
+                            </span>
+                            <span className="block font-mono text-[10px] text-slate-400">
+                              {tc.expectedReason}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-2">
+                            <span
+                              className={`font-medium ${
+                                observed.available ? 'text-emerald-600' : 'text-rose-600'
+                              }`}
+                            >
+                              {observed.available ? 'Available' : 'Unavailable'}
+                            </span>
+                            <span className="block font-mono text-[10px] text-slate-400">
+                              {observed.reasonCode}
+                            </span>
+                          </td>
+                          <td className="py-2">
+                            {pass ? (
+                              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                            ) : (
+                              <XCircle className="h-4 w-4 text-rose-500" />
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
           </div>
         </div>
 
